@@ -163,7 +163,6 @@ This project is open source and available under the [MIT License](LICENSE).
 ## 🙏 Acknowledgments
 
 - Inspired by [GothamChess's](https://www.youtube.com/@GothamChess) "Guess the ELO" series
-- Built with [Antigravity IDE](https://ide.google.com) powered by Gemini 3 Pro
 
 ---
 
