@@ -130,15 +130,12 @@ The app intelligently extracts ELO ratings from chat messages:
 ## 📸 Screenshots
 
 ### Streamer Control Panel
-![Streamer Panel]
 <img width="1282" height="758" alt="image" src="https://github.com/user-attachments/assets/245c83af-0395-47e1-8de7-a29c2d840543" />
 
 ### Moderator Panel
-![Moderator Panel]
 <img width="500" height="465" alt="image" src="https://github.com/user-attachments/assets/7dcf042d-98ed-4431-8c08-b7eb5d18ca6f" />
 
 ### Results View
-![Results]
 <img width="1296" height="856" alt="image" src="https://github.com/user-attachments/assets/13b9904f-efae-42fd-bc6e-ba7a8bc8031b" />
 
 ---
