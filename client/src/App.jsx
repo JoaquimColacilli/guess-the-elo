@@ -1,8 +1,12 @@
 import { useState, useEffect } from 'react';
+import { Routes, Route, Navigate } from 'react-router-dom';
 import { socket } from './services/socket';
 import StreamerPanel from './components/StreamerPanel';
 import OBSOverlay from './components/OBSOverlay';
 import ModeratorPanel from './components/ModeratorPanel';
+import Login from './components/Login';
+import ProtectedRoute from './components/ProtectedRoute';
+import Unauthorized from './components/Unauthorized';
 
 function App() {
   const [isConnected, setIsConnected] = useState(socket.connected);
@@ -20,20 +24,7 @@ function App() {
   const [roundResult, setRoundResult] = useState(null);
   const [notification, setNotification] = useState(null); // { type, message }
 
-  const [viewMode, setViewMode] = useState('streamer'); // 'streamer' | 'obs' | 'moderator'
-
   useEffect(() => {
-    // Simple URL param routing
-    const params = new URLSearchParams(window.location.search);
-    const path = window.location.pathname;
-
-    if (params.get('view') === 'obs') {
-      setViewMode('obs');
-      document.body.style.backgroundColor = 'transparent';
-    } else if (path === '/moderator') {
-      setViewMode('moderator');
-    }
-
     function onConnect() {
       setIsConnected(true);
     }
@@ -111,24 +102,52 @@ function App() {
     };
   }, []);
 
-  if (viewMode === 'obs') {
-    return <OBSOverlay messages={messages} stats={stats} gameState={gameState.state} roundResult={roundResult} />;
-  }
-
-  if (viewMode === 'moderator') {
-    return <ModeratorPanel isConnected={isConnected} />;
-  }
-
   return (
-    <StreamerPanel
-      isConnected={isConnected}
-      serverStatus={serverStatus}
-      messages={messages}
-      stats={stats}
-      gameState={gameState}
-      roundResult={roundResult}
-      notification={notification}
-    />
+    <Routes>
+      <Route path="/" element={<Login />} />
+      <Route path="/unauthorized" element={<Unauthorized />} />
+
+      <Route
+        path="/streamer"
+        element={
+          <ProtectedRoute requiredRole="broadcaster">
+            <StreamerPanel
+              isConnected={isConnected}
+              serverStatus={serverStatus}
+              messages={messages}
+              stats={stats}
+              gameState={gameState}
+              roundResult={roundResult}
+              notification={notification}
+            />
+          </ProtectedRoute>
+        }
+      />
+
+      <Route
+        path="/moderator"
+        element={
+          <ProtectedRoute requiredRole="moderator">
+            <ModeratorPanel isConnected={isConnected} />
+          </ProtectedRoute>
+        }
+      />
+
+      <Route
+        path="/obs"
+        element={
+          <OBSOverlay
+            messages={messages}
+            stats={stats}
+            gameState={gameState.state}
+            roundResult={roundResult}
+          />
+        }
+      />
+
+      {/* Catch all - redirect to login */}
+      <Route path="*" element={<Navigate to="/" replace />} />
+    </Routes>
   );
 }
 

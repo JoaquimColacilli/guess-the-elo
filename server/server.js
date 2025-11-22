@@ -1,12 +1,28 @@
+require('dotenv').config();
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
 const cors = require('cors');
 const twitchClient = require('./src/config/twitch');
-require('dotenv').config();
+const cookieParser = require('cookie-parser');
+const session = require('express-session');
+const passport = require('./auth/passport');
+const authRoutes = require('./routes/auth');
 
 const app = express();
-app.use(cors());
+app.use(cors({
+    origin: "http://localhost:5173",
+    credentials: true
+}));
+app.use(express.json());
+app.use(cookieParser());
+app.use(session({
+    secret: process.env.JWT_SECRET || 'keyboard cat',
+    resave: false,
+    saveUninitialized: false
+}));
+app.use(passport.initialize());
+app.use('/auth', authRoutes);
 
 const server = http.createServer(app);
 
@@ -117,6 +133,11 @@ io.on('connection', (socket) => {
     socket.emit('server_status', {
         status: 'online',
         twitchConnected: twitchClient.readyState() === 'OPEN'
+    });
+
+    // Send specific twitch status for UI indicators
+    socket.emit('twitch_status', {
+        connected: twitchClient.readyState() === 'OPEN'
     });
 
     // Send current game state immediately on connection
@@ -261,6 +282,16 @@ twitchClient.on('message', (channel, tags, message, self) => {
         guessValue,
         timestamp: new Date().toISOString()
     });
+});
+
+twitchClient.on('connected', () => {
+    console.log('✅ Twitch Client Connected');
+    io.emit('twitch_status', { connected: true });
+});
+
+twitchClient.on('disconnected', () => {
+    console.log('❌ Twitch Client Disconnected');
+    io.emit('twitch_status', { connected: false });
 });
 
 twitchClient.connect().catch(console.error);
