@@ -1,130 +1,169 @@
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
+import { useAuth } from '../context/AuthContext';
 import { socket } from '../services/socket';
 
-export default function ModeratorPanel({ isConnected }) {
-    const [gothamSubInput, setGothamSubInput] = useState('');
-    const [randomPlayerInput, setRandomPlayerInput] = useState('');
-    const [submitted, setSubmitted] = useState(false);
+const ModeratorPanel = () => {
+    const { user, logout } = useAuth();
+    const [gothamSub, setGothamSub] = useState('');
+    const [randomPlayer, setRandomPlayer] = useState('');
+    const [status, setStatus] = useState({ type: '', message: '' });
+    const [isConnected, setIsConnected] = useState(socket.connected);
 
     useEffect(() => {
-        function onRoundReset() {
-            console.log('Moderator: Round Reset received');
-            setSubmitted(false);
-            setGothamSubInput('');
-            setRandomPlayerInput('');
-        }
+        document.title = "GTE - Moderator Panel";
+    }, []);
 
-        // Also listen to initial state to determine if locked
-        function onGameState(data) {
-            if (data.elosLocked) {
-                setSubmitted(true);
-            } else if (data.state === 'WAITING') {
-                setSubmitted(false);
+    useEffect(() => {
+        socket.on('connect', () => setIsConnected(true));
+        socket.on('disconnect', () => setIsConnected(false));
+
+        socket.on('notification', (data) => {
+            setStatus({ type: data.type, message: data.message });
+            // Auto clear success messages
+            if (data.type === 'success') {
+                setTimeout(() => setStatus({ type: '', message: '' }), 3000);
             }
-        }
-
-        socket.on('round_reset', onRoundReset);
-        socket.on('game_state', onGameState);
+        });
 
         return () => {
-            socket.off('round_reset', onRoundReset);
-            socket.off('game_state', onGameState);
+            socket.off('connect');
+            socket.off('disconnect');
+            socket.off('notification');
         };
     }, []);
 
     const handleSubmit = (e) => {
         e.preventDefault();
-        if (!gothamSubInput || !randomPlayerInput) return;
 
-        const gothamSub = parseInt(gothamSubInput, 10);
-        const randomPlayer = parseInt(randomPlayerInput, 10);
+        // Validation
+        const subElo = parseInt(gothamSub);
+        const randomElo = parseInt(randomPlayer);
 
-        if (isNaN(gothamSub) || isNaN(randomPlayer)) return;
+        if (!subElo || !randomElo) {
+            setStatus({ type: 'error', message: 'Both ELOs are required.' });
+            return;
+        }
+
+        if (subElo < 100 || subElo > 3500 || randomElo < 100 || randomElo > 3500) {
+            setStatus({ type: 'error', message: 'ELOs must be between 100 and 3500.' });
+            return;
+        }
 
         socket.emit('admin_set_elos', { gothamSub, randomPlayer });
-        setSubmitted(true);
-    };
-
-    const handleReset = () => {
-        if (confirm('Are you sure you want to reset the round? This will clear all data.')) {
-            socket.emit('reset_round');
-            // State update will happen via socket event 'round_reset'
-        }
+        // Clear inputs after successful send (optional, maybe keep them for reference?)
+        // setGothamSub('');
+        // setRandomPlayer('');
     };
 
     return (
-        <div className="min-h-screen bg-twitch-dark flex items-center justify-center p-6 font-sans">
-            <div className="bg-twitch-card border border-twitch-brand p-8 rounded-xl shadow-2xl max-w-md w-full relative">
-
-                {/* Connection Status */}
-                <div className="absolute top-4 right-4">
-                    <div className={`w-3 h-3 rounded-full ${isConnected ? 'bg-green-500' : 'bg-red-500'}`}></div>
+        <div className="min-h-screen bg-[#0e0e10] text-white font-sans flex flex-col">
+            {/* --- HEADER --- */}
+            <header className="bg-[#18181b] border-b border-gray-800 p-4 flex justify-between items-center shadow-md">
+                <div className="flex items-center space-x-4">
+                    <h1 className="text-xl font-bold text-[#9146FF]">♜ Moderator Panel</h1>
                 </div>
 
-                <h1 className="text-2xl font-bold text-white mb-2">Moderator Panel</h1>
-                <p className="text-twitch-muted mb-6 text-sm">
-                    Load the ELO ratings for the upcoming match.
-                </p>
-
-                <form onSubmit={handleSubmit} className="space-y-6">
-
-                    {/* Input 1: Gotham Sub */}
-                    <div>
-                        <label className="block text-xs font-bold text-twitch-brand uppercase mb-2">
-                            GothamChess Subscriber ELO
-                        </label>
-                        <input
-                            type="number"
-                            value={gothamSubInput}
-                            onChange={(e) => setGothamSubInput(e.target.value)}
-                            className="w-full bg-black/50 border border-gray-700 rounded p-4 text-2xl text-center font-bold text-white focus:outline-none focus:border-twitch-brand transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                            placeholder="e.g. 1200"
-                            disabled={submitted}
-                            autoFocus
-                        />
+                <div className="flex items-center space-x-6">
+                    {/* Status */}
+                    <div className={`flex items-center space-x-2 px-3 py-1 rounded-full border ${isConnected ? 'bg-green-900/20 border-green-500/50' : 'bg-red-900/20 border-red-500/50'}`}>
+                        <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-500' : 'bg-red-500'}`}></div>
+                        <span className={`text-xs font-bold ${isConnected ? 'text-green-400' : 'text-red-400'}`}>
+                            {isConnected ? 'CONNECTED' : 'DISCONNECTED'}
+                        </span>
                     </div>
 
-                    {/* Input 2: Random Player */}
-                    <div>
-                        <label className="block text-xs font-bold text-gray-400 uppercase mb-2">
-                            Random Player ELO
-                        </label>
-                        <input
-                            type="number"
-                            value={randomPlayerInput}
-                            onChange={(e) => setRandomPlayerInput(e.target.value)}
-                            className="w-full bg-black/50 border border-gray-700 rounded p-4 text-2xl text-center font-bold text-white focus:outline-none focus:border-twitch-brand transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                            placeholder="e.g. 1350"
-                            disabled={submitted}
+                    {/* User Section */}
+                    <div className="flex items-center space-x-4 pl-6 border-l border-gray-700">
+                        <div className="text-right hidden sm:block">
+                            <div className="font-bold text-white">{user?.display_name || 'Moderator'}</div>
+                            <div className="text-xs text-gray-400 uppercase">MODERATOR</div>
+                        </div>
+                        <img
+                            src={user?.profile_image_url || "https://static-cdn.jtvnw.net/user-default-pictures-uv/cdd517fe-def4-11e9-948e-784f43822e80-profile_image-70x70.png"}
+                            alt="Profile"
+                            className="w-10 h-10 rounded-full border-2 border-gray-600"
                         />
-                    </div>
-
-                    <button
-                        type="submit"
-                        className={`w-full py-4 rounded-lg font-bold text-lg transition-all duration-200 ${submitted
-                                ? 'bg-green-600 text-white cursor-default'
-                                : 'bg-twitch-brand hover:bg-twitch-brand-dark text-white shadow-lg hover:shadow-twitch-brand/20'
-                            }`}
-                        disabled={submitted || !gothamSubInput || !randomPlayerInput}
-                    >
-                        {submitted ? '✅ ELOs Locked' : 'Load ELOs to System'}
-                    </button>
-                </form>
-
-                {submitted && (
-                    <div className="mt-6 pt-6 border-t border-gray-800 text-center">
-                        <p className="text-xs text-green-400 mb-4">
-                            Round is active. Controls are locked until reset.
-                        </p>
                         <button
-                            onClick={handleReset}
-                            className="text-red-500 hover:text-red-400 text-sm font-bold underline"
+                            onClick={logout}
+                            className="bg-red-600/10 hover:bg-red-600 text-red-500 hover:text-white p-2 rounded-lg transition-colors"
+                            title="Logout"
                         >
-                            Reset Round (Emergency)
+                            🚪
                         </button>
                     </div>
-                )}
-            </div>
+                </div>
+            </header>
+
+            {/* --- MAIN CONTENT --- */}
+            <main className="flex-1 flex items-center justify-center p-6">
+                <div className="w-full max-w-2xl bg-[#18181b] rounded-2xl border border-gray-800 shadow-2xl p-8 space-y-8">
+
+                    <div className="text-center space-y-2">
+                        <h2 className="text-2xl font-bold text-white">Load Match Data</h2>
+                        <p className="text-gray-400">Enter the ELO ratings for the current match.</p>
+                    </div>
+
+                    <form onSubmit={handleSubmit} className="space-y-6">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            {/* Input 1 */}
+                            <div className="space-y-2">
+                                <label className="block text-sm font-bold text-gray-300 uppercase tracking-wide">
+                                    Gotham Subscriber ELO
+                                </label>
+                                <div className="relative">
+                                    <input
+                                        type="number"
+                                        value={gothamSub}
+                                        onChange={(e) => setGothamSub(e.target.value)}
+                                        className="w-full bg-black border border-gray-700 rounded-xl px-4 py-4 text-white text-lg focus:border-[#9146FF] focus:ring-1 focus:ring-[#9146FF] focus:outline-none transition-all font-mono"
+                                        placeholder="e.g. 1200"
+                                    />
+                                    <div className="absolute right-4 top-1/2 transform -translate-y-1/2 text-gray-600">
+                                        ♔
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Input 2 */}
+                            <div className="space-y-2">
+                                <label className="block text-sm font-bold text-gray-300 uppercase tracking-wide">
+                                    Random Player ELO
+                                </label>
+                                <div className="relative">
+                                    <input
+                                        type="number"
+                                        value={randomPlayer}
+                                        onChange={(e) => setRandomPlayer(e.target.value)}
+                                        className="w-full bg-black border border-gray-700 rounded-xl px-4 py-4 text-white text-lg focus:border-[#9146FF] focus:ring-1 focus:ring-[#9146FF] focus:outline-none transition-all font-mono"
+                                        placeholder="e.g. 1350"
+                                    />
+                                    <div className="absolute right-4 top-1/2 transform -translate-y-1/2 text-gray-600">
+                                        ♟
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Status Message */}
+                        {status.message && (
+                            <div className={`p-4 rounded-lg text-center font-bold animate-fade-in ${status.type === 'error' ? 'bg-red-900/20 text-red-400 border border-red-900' : 'bg-green-900/20 text-green-400 border border-green-900'
+                                }`}>
+                                {status.message}
+                            </div>
+                        )}
+
+                        {/* Submit Button */}
+                        <button
+                            type="submit"
+                            className="w-full bg-[#9146FF] hover:bg-[#772ce8] text-white font-bold py-4 rounded-xl shadow-lg hover:shadow-[#9146FF]/20 transition-all transform hover:-translate-y-1 flex items-center justify-center space-x-2"
+                        >
+                            <span>✓ LOAD ELOs TO SYSTEM</span>
+                        </button>
+                    </form>
+                </div>
+            </main>
         </div>
     );
-}
+};
+
+export default ModeratorPanel;
