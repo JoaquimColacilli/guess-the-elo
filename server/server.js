@@ -8,6 +8,7 @@ const cookieParser = require('cookie-parser');
 const session = require('express-session');
 const passport = require('./auth/passport');
 const authRoutes = require('./routes/auth');
+const { parseElo, calculateStats, calculateResults } = require('./src/utils/gameLogic');
 
 const app = express();
 app.use(cors({
@@ -34,12 +35,6 @@ const io = new Server(server, {
 });
 
 // --- GAME STATE MANAGEMENT ---
-// State Machine:
-// 'WAITING':  Waiting for Moderator to set BOTH ELOs.
-// 'READY':    ELOs set & locked. Waiting for Streamer to START round.
-// 'GUESSING': Round Active. Audience is voting. Streamer watching game.
-// 'REVEALED': Round Ended. Results shown.
-
 let gameState = 'WAITING';
 
 // Game Data
@@ -50,65 +45,6 @@ let elosLocked = false;
 let streamerGuess = null;    // Set by Streamer AT REVEAL
 const audienceGuesses = new Map(); // username -> elo
 
-// --- HELPER FUNCTIONS ---
-
-function calculateStats() {
-    if (audienceGuesses.size === 0) return { total: 0, average: 0 };
-
-    let sum = 0;
-    for (const elo of audienceGuesses.values()) {
-        sum += elo;
-    }
-
-    return {
-        total: audienceGuesses.size,
-        average: Math.round(sum / audienceGuesses.size)
-    };
-}
-
-function calculateResults() {
-    const stats = calculateStats();
-    const audienceAvg = stats.average;
-
-    // Calculate Differences based on GOTHAM SUB ELO
-    const targetELO = gothamSubELO;
-
-    const streamerDiff = Math.abs(streamerGuess - targetELO);
-    const audienceDiff = Math.abs(audienceAvg - targetELO);
-
-    // Determine Winner
-    let winner = 'DRAW';
-    if (streamerDiff < audienceDiff) winner = 'STREAMER';
-    else if (audienceDiff < streamerDiff) winner = 'AUDIENCE';
-
-    // Find Exact Matches
-    const exactMatches = [];
-    const leaderboard = [];
-
-    for (const [user, guess] of audienceGuesses.entries()) {
-        const diff = Math.abs(guess - targetELO);
-        const entry = { user, guess, diff };
-
-        leaderboard.push(entry);
-        if (diff === 0) exactMatches.push(user);
-    }
-
-    // Sort Leaderboard (Top 5 closest)
-    leaderboard.sort((a, b) => a.diff - b.diff);
-
-    return {
-        gothamSubELO,
-        randomPlayerELO,
-        streamerGuess,
-        streamerDiff,
-        audienceAvg,
-        audienceDiff,
-        winner,
-        exactMatches,
-        leaderboard: leaderboard.slice(0, 5)
-    };
-}
-
 function broadcastState() {
     io.emit('game_state', {
         state: gameState,
@@ -118,7 +54,7 @@ function broadcastState() {
 }
 
 function broadcastStats() {
-    io.emit('game_stats', calculateStats());
+    io.emit('game_stats', calculateStats(audienceGuesses));
 }
 
 // --- SOCKET CONNECTION ---
@@ -146,11 +82,11 @@ io.on('connection', (socket) => {
         elosLocked,
         hasStreamerGuess: !!streamerGuess
     });
-    socket.emit('game_stats', calculateStats());
+    socket.emit('game_stats', calculateStats(audienceGuesses));
 
     // If round is revealed, send results to new client
     if (gameState === 'REVEALED' && streamerGuess !== null) {
-        socket.emit('round_result', calculateResults());
+        socket.emit('round_result', calculateResults(gothamSubELO, streamerGuess, audienceGuesses));
     }
 
     // --- MODERATOR EVENTS ---
@@ -210,7 +146,7 @@ io.on('connection', (socket) => {
         streamerGuess = parseInt(guess, 10);
         gameState = 'REVEALED';
 
-        const results = calculateResults();
+        const results = calculateResults(gothamSubELO, streamerGuess, audienceGuesses);
         console.log(`🏆 Round Revealed. Streamer guessed: ${streamerGuess}`);
 
         broadcastState();
@@ -255,18 +191,12 @@ twitchClient.on('message', (channel, tags, message, self) => {
 
     const username = tags['display-name'];
 
-    // Parse ELO: 100-3500
-    const eloRegex = /\b([1-9][0-9]{2}|[1-2][0-9]{3}|3[0-4][0-9]{2}|3500)\b/;
-    const match = message.match(eloRegex);
-
-    let isGuess = false;
-    let guessValue = null;
+    // Parse ELO using utility
+    const guessValue = parseElo(message);
+    const isGuess = !!guessValue;
 
     // Only accept guesses if game is ACTIVE (GUESSING state)
-    if (match && gameState === 'GUESSING') {
-        isGuess = true;
-        guessValue = parseInt(match[0], 10);
-
+    if (isGuess && gameState === 'GUESSING') {
         // Update user guess (only latest counts)
         audienceGuesses.set(username, guessValue);
 
